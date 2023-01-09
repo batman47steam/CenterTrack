@@ -13,6 +13,7 @@ import pycocotools.coco as coco
 import torch
 import torch.utils.data as data
 
+# 需要在utils文件夹下的image.py里面找
 from utils.image import flip, color_aug
 from utils.image import get_affine_transform, affine_transform
 from utils.image import gaussian_radius, draw_umich_gaussian
@@ -40,6 +41,7 @@ class GenericDataset(data.Dataset):
                    dtype=np.float32).reshape(1, 1, 3)
   std  = np.array([0.28863828, 0.27408164, 0.27809835],
                    dtype=np.float32).reshape(1, 1, 3)
+  # _eig_val, _eig_vec是用于进行颜色增强的
   _eig_val = np.array([0.2141788, 0.01817699, 0.00341571],
                       dtype=np.float32)
   _eig_vec = np.array([
@@ -90,10 +92,13 @@ class GenericDataset(data.Dataset):
         img = img[:, ::-1, :]
         anns = self._flip_anns(anns, width)
 
+    # 仿射变化，一般不涉及到rot，主要就是利用中心点c，尺度变化s
+    # 以及指定的input_w和input_h
     trans_input = get_affine_transform(
       c, s, rot, [opt.input_w, opt.input_h])
     trans_output = get_affine_transform(
       c, s, rot, [opt.output_w, opt.output_h])
+    # _get_input已经是仿射变化以后的图片了，而且也变成了c,h,w的形式
     inp = self._get_input(img, trans_input)
     ret = {'image': inp}
     gt_det = {'bboxes': [], 'scores': [], 'clses': [], 'cts': []}
@@ -130,6 +135,7 @@ class GenericDataset(data.Dataset):
     
     num_objs = min(len(anns), self.max_objs)
     for k in range(num_objs):
+      # k对应的图片中obj的索引，第k个object
       ann = anns[k]
       cls_id = int(self.cat_ids[ann['category_id']])
       if cls_id > self.opt.num_classes or cls_id <= -999:
@@ -332,6 +338,7 @@ class GenericDataset(data.Dataset):
     ret['hm'] = np.zeros(
       (self.opt.num_classes, self.opt.output_h, self.opt.output_w), 
       np.float32)
+    # 这3个参数的大小都是根据最多的object来的max_objs
     ret['ind'] = np.zeros((max_objs), dtype=np.int64)
     ret['cat'] = np.zeros((max_objs), dtype=np.int64)
     ret['mask'] = np.zeros((max_objs), dtype=np.float32)
@@ -397,7 +404,11 @@ class GenericDataset(data.Dataset):
       self._ignore_region(ret['hm_hp'][:, int(bbox[1]): int(bbox[3]) + 1, 
                                           int(bbox[0]): int(bbox[2]) + 1])
 
-
+  # xywh -> xyxy
+  # 原本的应该是xywh, 这样在相加以后就得到了左上角和右下角的顶点了
+  # coco默认标注的是xywh的形式
+  # 我是用下面这个把csv转成coco的，他在转的时候把csv标注的xyxy -> xywh
+  # https://github.com/hu64/SpotNet/blob/master/object%20detection/src/tools/convert_csv_to_coco.py
   def _coco_box_to_bbox(self, box):
     bbox = np.array([box[0], box[1], box[0] + box[2], box[1] + box[3]],
                     dtype=np.float32)
@@ -405,18 +416,26 @@ class GenericDataset(data.Dataset):
 
 
   def _get_bbox_output(self, bbox, trans_output, height, width):
-    bbox = self._coco_box_to_bbox(bbox).copy()
+    bbox = self._coco_box_to_bbox(bbox).copy() # xywh -> x1y1x2y2
 
     rect = np.array([[bbox[0], bbox[1]], [bbox[0], bbox[3]],
                     [bbox[2], bbox[3]], [bbox[2], bbox[1]]], dtype=np.float32)
+    # 对boundingbox进行同样的仿射变化
     for t in range(4):
       rect[t] =  affine_transform(rect[t], trans_output)
+    # 仿射变化以后重新取x1，y1，x2，y2
+    # example, x1肯定要取仿射变化以后矩形左侧的最小值
     bbox[:2] = rect[:, 0].min(), rect[:, 1].min()
     bbox[2:] = rect[:, 0].max(), rect[:, 1].max()
 
+    #https://medium.com/aimmosubscribe/review-visibility-guided-nms-efficient-boosting-of-amodal-object-detection-in-crowded-traffic-e95ebb1470fc
+    #关于amodal的解释
+    #这样来看其实就是没有进行越界处理的boundingbox ??
     bbox_amodal = copy.deepcopy(bbox)
+    # 防止越界
     bbox[[0, 2]] = np.clip(bbox[[0, 2]], 0, self.opt.output_w - 1)
     bbox[[1, 3]] = np.clip(bbox[[1, 3]], 0, self.opt.output_h - 1)
+    # 重新计算出wh，因为最后是要回归wh的
     h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
     return bbox, bbox_amodal
 
@@ -424,21 +443,27 @@ class GenericDataset(data.Dataset):
     self, ret, gt_det, k, cls_id, bbox, bbox_amodal, ann, trans_output,
     aug_s, calib, pre_cts=None, track_ids=None):
     h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
+    # 前面的仿射变化可能造成hw为0的情况，所以就直接跳过了
     if h <= 0 or w <= 0:
       return
+    # 通过解方程来确定heatmap中center的半径
+    # https://cloud.tencent.com/developer/article/1669896
     radius = gaussian_radius((math.ceil(h), math.ceil(w)))
     radius = max(0, int(radius)) 
     ct = np.array(
       [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
     ct_int = ct.astype(np.int32)
     ret['cat'][k] = cls_id - 1
-    ret['mask'][k] = 1
+    ret['mask'][k] = 1 # 好多类别都有个对应的mask这个到底是什么意思
     if 'wh' in ret:
       ret['wh'][k] = 1. * w, 1. * h
       ret['wh_mask'][k] = 1
+    # 这里的ind只能是把图片拉平成一维以后的位置吧
     ret['ind'][k] = ct_int[1] * self.opt.output_w + ct_int[0]
     ret['reg'][k] = ct - ct_int
     ret['reg_mask'][k] = 1
+    # heatmap是在相应的类别所对应的通道上去画高斯圆形
+    # 但是作为输入的时候就是直接在一张单通道的图上面画的
     draw_umich_gaussian(ret['hm'][cls_id - 1], ct_int, radius)
 
     gt_det['bboxes'].append(
@@ -457,12 +482,15 @@ class GenericDataset(data.Dataset):
       else:
         gt_det['tracking'].append(np.zeros(2, np.float32))
 
-    if 'ltrb' in self.opt.heads:
+    if 'ltrb' in self.opt.heads: # 计算center到四条边的距离
       ret['ltrb'][k] = bbox[0] - ct_int[0], bbox[1] - ct_int[1], \
         bbox[2] - ct_int[0], bbox[3] - ct_int[1]
       ret['ltrb_mask'][k] = 1
 
+    # _get_bbox_output中得到bbox_amodal
+    # 好像就是没有进行越界处理的的bbox, xyxy可能处于图像外面
     if 'ltrb_amodal' in self.opt.heads:
+      # 如果bbox的点处于图像外面，还是照样用center去减去，得到ltrb
       ret['ltrb_amodal'][k] = \
         bbox_amodal[0] - ct_int[0], bbox_amodal[1] - ct_int[1], \
         bbox_amodal[2] - ct_int[0], bbox_amodal[3] - ct_int[1]
@@ -476,6 +504,7 @@ class GenericDataset(data.Dataset):
         ret['nuscenes_att_mask'][k][self.nuscenes_att_range[att]] = 1
       gt_det['nuscenes_att'].append(ret['nuscenes_att'][k])
 
+    # 似乎是需要标注里面提供vel
     if 'velocity' in self.opt.heads:
       if ('velocity' in ann) and min(ann['velocity']) > -1000:
         ret['velocity'][k] = np.array(ann['velocity'], np.float32)[:3]
@@ -513,7 +542,7 @@ class GenericDataset(data.Dataset):
       else:
         gt_det['amodel_offset'].append([0, 0])
     
-
+  # 应该是和位姿估计相关的，和需求的目标跟踪没什么关联
   def _add_hps(self, ret, k, ann, gt_det, trans_output, ct_int, bbox, h, w):
     num_joints = self.num_joints
     pts = np.array(ann['keypoints'], np.float32).reshape(num_joints, 3) \
@@ -566,7 +595,8 @@ class GenericDataset(data.Dataset):
       gt_det['rot'].append(self._alpha_to_8(ann['alpha']))
     else:
       gt_det['rot'].append(self._alpha_to_8(0))
-    
+
+  # 涉及到pi的，应该是和旋转相关的
   def _alpha_to_8(self, alpha):
     ret = [0, 0, 0, 1, 0, 0, 0, 1]
     if alpha < np.pi / 6. or alpha > 5 * np.pi / 6.:
@@ -592,6 +622,10 @@ class GenericDataset(data.Dataset):
     gt_det = {k: np.array(gt_det[k], dtype=np.float32) for k in gt_det}
     return gt_det
 
+  # 如果输入的不是视频，通过这个伪造成视频模式
+  # 其实就是每张图片都对应一个video_id，也就是说每张图片都对应一个独立的视频
+  # 然后这个视频里面就一张图片，所以frame_id永远是1
+  # 同时添加了track_id，好像是根据所有的标注来分配的
   def fake_video_data(self):
     self.coco.dataset['videos'] = []
     for i in range(len(self.coco.dataset['images'])):

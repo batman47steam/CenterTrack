@@ -102,6 +102,8 @@ def crop(img, center, scale, output_size, rot=0):
     return dst_img
 
 # @numba.jit(nopython=True, nogil=True)
+# https://cloud.tencent.com/developer/article/1669896
+# 求一个center的半径，这个半径应该能够使得在和ground-truth的iou在70%往上
 def gaussian_radius(det_size, min_overlap=0.7):
   height, width = det_size
 
