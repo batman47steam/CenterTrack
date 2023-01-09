@@ -5,6 +5,12 @@ from __future__ import print_function
 import torch
 from torch import nn
 
+"""
+模型相同的部分，3个head都是在base_model这个基类部分实现
+但是具体的img2feats, imgpre2feats 应该就是负责对输入的图片进行提取的主干网络
+这个部分是在各自的子类中去具体的实现
+"""
+
 def fill_fc_weights(layers):
     for m in layers.modules():
         if isinstance(m, nn.Conv2d):
@@ -64,6 +70,9 @@ class BaseModel(nn.Module):
                 fill_fc_weights(fc)
             self.__setattr__(head, fc)
 
+    # img2feats => 输入就是本次的图片
+    # imgpre2feats => 输入是本次的图片 + last frame + pre_heatmap
+    # 这个两个函数都是由各自的子类去具体的进行实现
     def img2feats(self, x):
       raise NotImplementedError
     
@@ -71,7 +80,7 @@ class BaseModel(nn.Module):
       raise NotImplementedError
 
     def forward(self, x, pre_img=None, pre_hm=None):
-      if (pre_hm is not None) or (pre_img is not None):
+      if (pre_hm is not None) or (pre_img is not None): # 对于track的这种情况肯定是优先去调用imgpre2feats
         feats = self.imgpre2feats(x, pre_img, pre_hm)
       else:
         feats = self.img2feats(x)
@@ -79,7 +88,7 @@ class BaseModel(nn.Module):
       if self.opt.model_output_list:
         for s in range(self.num_stacks):
           z = []
-          for head in sorted(self.heads):
+          for head in sorted(self.heads): # 前面的feats是主干网络提取到的特征，后面的部分就是具体的3个head
               z.append(self.__getattr__(head)(feats[s]))
           out.append(z)
       else:

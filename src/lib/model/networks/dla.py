@@ -161,12 +161,13 @@ class Root(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.residual = residual
 
+    # *x接受任意多个参数并放入到一个元组中
     def forward(self, *x):
-        children = x
-        x = self.conv(torch.cat(x, 1))
+        children = x # x对应的其实是多个输入
+        x = self.conv(torch.cat(x, 1)) # 1即在通道方向上进行合并
         x = self.bn(x)
         if self.residual:
-            x += children[0]
+            x += children[0] # 残差链接方式会重新加上元组中的第一个元素
         x = self.relu(x)
 
         return x
@@ -182,11 +183,13 @@ class Tree(nn.Module):
         if level_root:
             root_dim += in_channels
         if levels == 1:
+            # block对应的就是resnet的basicblock
+            # 下面调用tree1的时候其实是调用的就是basicblock的forward
             self.tree1 = block(in_channels, out_channels, stride,
                                dilation=dilation)
             self.tree2 = block(out_channels, out_channels, 1,
                                dilation=dilation)
-        else:
+        else: # 不论是什么level， tree1和tree2的本质区别也就是通道数不同
             self.tree1 = Tree(levels - 1, block, in_channels, out_channels,
                               stride, root_dim=0,
                               root_kernel_size=root_kernel_size,
@@ -214,16 +217,20 @@ class Tree(nn.Module):
 
     def forward(self, x, residual=None, children=None):
         children = [] if children is None else children
-        bottom = self.downsample(x) if self.downsample else x
-        residual = self.project(bottom) if self.project else bottom
-        if self.level_root:
+        bottom = self.downsample(x) if self.downsample else x # downsample是通过maxpool实现的
+        residual = self.project(bottom) if self.project else bottom # conv + bn, 目的为改变通道数
+        if self.level_root: # 如果是叶子节点，downsample以后的结果会加入进children中
             children.append(bottom)
-        x1 = self.tree1(x, residual)
+        x1 = self.tree1(x, residual) # level=1的时候调用basicblock的前向传播函数， level ！= 1时候，递归调用
         if self.levels == 1:
-            x2 = self.tree2(x1)
+            x2 = self.tree2(x1) # level = 1 tree2即调用basicblock的前向传播函数
             x = self.root(x2, x1, *children)
         else:
+            # level != 1 的时候在哪里调用root ？
+            # 每个tree都有一个root， 然后这个root都会额外接受一个children，children里面就存放着前一次的结果
             children.append(x1)
+            # x1的结果也在children，等下tree2在调用root的时候，接受了children
+            # 就也通过一种残差连接的方式把两个tree给连接起来了
             x = self.tree2(x1, children=children)
         return x
 
@@ -529,7 +536,7 @@ class IDAUp(nn.Module):
             up = nn.ConvTranspose2d(o, o, f * 2, stride=f, 
                                     padding=f // 2, output_padding=0,
                                     groups=o, bias=False)
-            fill_up_weights(up)
+            fill_up_weights(up) # 上采样部分初始化时候的权重设置
 
             setattr(self, 'proj_' + str(i), proj)
             setattr(self, 'up_' + str(i), up)
@@ -628,6 +635,7 @@ class DLASeg(BaseModel):
 
         return [y[-1]]
 
+    # backbone + neck对输入的特征进行提取
     def imgpre2feats(self, x, pre_img=None, pre_hm=None):
         x = self.base(x, pre_img, pre_hm)
         x = self.dla_up(x)

@@ -88,6 +88,7 @@ class GenericNetwork(nn.Module):
                 fill_fc_weights(fc)
             self.__setattr__(head, fc)
 
+
     def forward(self, x, pre_img=None, pre_hm=None):
       y = self.backbone(x, pre_img, pre_hm)
       feats = self.neck(y)
