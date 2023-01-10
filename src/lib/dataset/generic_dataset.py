@@ -377,7 +377,7 @@ class GenericDataset(data.Dataset):
 
 
   def _get_calib(self, img_info, width, height):
-    if 'calib' in img_info:
+    if 'calib' not in img_info: # 解决coco字段里面calib对应空的问题，要不然直接去除calib字段
       calib = np.array(img_info['calib'], dtype=np.float32)
     else:
       calib = np.array([[self.rest_focal_length, 0, width / 2, 0], 
