@@ -1,5 +1,6 @@
 videos/
 input/
+datasets/
 *.zip
 centernet_models/*
 centertrack_models/*

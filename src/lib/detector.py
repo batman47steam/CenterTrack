@@ -250,7 +250,7 @@ class Detector(object):
     bbox[[1, 3]] = np.clip(bbox[[1, 3]], 0, height - 1)
     return bbox
 
-
+  # heatmap作为输入的时候，前一次的heatmap是得到上一次的输出结果以后重新画出来的
   def _get_additional_inputs(self, dets, meta, with_hm=True):
     '''
     Render input heatmap from previous trackings.

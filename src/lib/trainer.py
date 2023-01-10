@@ -20,8 +20,8 @@ from utils.post_process import generic_post_process
 class GenericLoss(torch.nn.Module):
   def __init__(self, opt):
     super(GenericLoss, self).__init__()
-    self.crit = FastFocalLoss(opt=opt)
-    self.crit_reg = RegWeightedL1Loss()
+    self.crit = FastFocalLoss(opt=opt) # heatmap中center相关的地方用的是FocalLoss
+    self.crit_reg = RegWeightedL1Loss() # 其他地方的loss用的似乎都是l1loss
     if 'rot' in opt.heads:
       self.crit_rot = BinRotLoss()
     if 'nuscenes_att' in opt.heads:
@@ -30,7 +30,7 @@ class GenericLoss(torch.nn.Module):
 
   def _sigmoid_output(self, output):
     if 'hm' in output:
-      output['hm'] = _sigmoid(output['hm'])
+      output['hm'] = _sigmoid(output['hm']) # 只有heatmap的输出会经过sigmod函数
     if 'hm_hp' in output:
       output['hm_hp'] = _sigmoid(output['hm_hp'])
     if 'dep' in output:
@@ -46,14 +46,20 @@ class GenericLoss(torch.nn.Module):
       output = self._sigmoid_output(output)
 
       if 'hm' in output:
+        # heatmap分支调用的是self.crit也就是前面定义的FastFocalLoss
         losses['hm'] += self.crit(
           output['hm'], batch['hm'], batch['ind'], 
           batch['mask'], batch['cat']) / opt.num_stacks
-      
+
+      # 下面的regression_heads调用的都为L1 loss
+      # reg wh tracking 是比较关心的部分
+      # ltrb ltrb_amodal 是其次的，可以添加可以不添加
+      # 其他损失不关心
       regression_heads = [
         'reg', 'wh', 'tracking', 'ltrb', 'ltrb_amodal', 'hps', 
         'dep', 'dim', 'amodel_offset', 'velocity']
 
+      # regression_heads的loss相加
       for head in regression_heads:
         if head in output:
           losses[head] += self.crit_reg(
@@ -79,6 +85,7 @@ class GenericLoss(torch.nn.Module):
           output['nuscenes_att'], batch['nuscenes_att_mask'],
           batch['ind'], batch['nuscenes_att']) / opt.num_stacks
 
+    # 最终的总loss就是各个loss按照一定的权重相加
     losses['tot'] = 0
     for head in opt.heads:
       losses['tot'] += opt.weights[head] * losses[head]
@@ -95,6 +102,7 @@ class ModleWithLoss(torch.nn.Module):
   def forward(self, batch):
     pre_img = batch['pre_img'] if 'pre_img' in batch else None
     pre_hm = batch['pre_hm'] if 'pre_hm' in batch else None
+    # batch中提供当前的img,pre_img,pre_hm
     outputs = self.model(batch['image'], pre_img, pre_hm)
     loss, loss_stats = self.loss(outputs, batch)
     return outputs[-1], loss, loss_stats
@@ -179,7 +187,8 @@ class Trainer(object):
     ret = {k: v.avg for k, v in avg_loss_stats.items()}
     ret['time'] = bar.elapsed_td.total_seconds() / 60.
     return ret, results
-  
+
+  # _get_losses根据opt选项来配置相应的loss
   def _get_losses(self, opt):
     loss_order = ['hm', 'wh', 'reg', 'ltrb', 'hps', 'hm_hp', \
       'hp_offset', 'dep', 'dim', 'rot', 'amodel_offset', \

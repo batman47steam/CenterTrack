@@ -6,6 +6,13 @@ import argparse
 import os
 import sys
 
+"""
+还不支持resnet作为backbone，目前支持mobilenet作为backbone
+https://github.com/xingyizhou/CenterTrack/issues/82
+下面的这个代码说是调通了利用resnet来作为backbone
+https://github.com/lrjbdss/CenterTrack_2D_train
+"""
+
 class opts(object):
   def __init__(self):
     self.parser = argparse.ArgumentParser()
@@ -79,7 +86,7 @@ class opts(object):
     self.parser.add_argument('--show_trace', action='store_true')
 
     # model
-    self.parser.add_argument('--arch', default='dla_34', 
+    self.parser.add_argument('--arch', default='dla_34',
                              help='model architecture. Currently tested'
                                   'res_18 | res_101 | resdcn_18 | resdcn_101 |'
                                   'dlav0_34 | dla_34 | hourglass')
@@ -122,7 +129,7 @@ class opts(object):
                              help='when to save the model to disk.')
     self.parser.add_argument('--num_epochs', type=int, default=70,
                              help='total training epochs.')
-    self.parser.add_argument('--batch_size', type=int, default=4, # default=32
+    self.parser.add_argument('--batch_size', type=int, default=1, # default=32
                              help='batch size')
     self.parser.add_argument('--master_batch_size', type=int, default=-1,
                              help='batch size on the master gpu.')

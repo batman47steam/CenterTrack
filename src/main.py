@@ -44,7 +44,7 @@ def main(opt):
     model, optimizer, start_epoch = load_model(
       model, opt.load_model, opt, optimizer)
 
-  trainer = Trainer(opt, model, optimizer)
+  trainer = Trainer(opt, model, optimizer) # Trainer是在这里进行初始化的，设置模型以及对应的优化器
   trainer.set_device(opt.gpus, opt.chunk_sizes, opt.device)
   
   if opt.val_intervals < opt.num_epochs or opt.test:
