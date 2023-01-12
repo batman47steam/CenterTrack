@@ -214,11 +214,11 @@ class opts(object):
     self.parser.add_argument('--pre_hm', action='store_true')
     self.parser.add_argument('--same_aug_pre', action='store_true')
     self.parser.add_argument('--zero_pre_hm', action='store_true')
-    self.parser.add_argument('--hm_disturb', type=float, default=0)
-    self.parser.add_argument('--lost_disturb', type=float, default=0)
-    self.parser.add_argument('--fp_disturb', type=float, default=0)
+    self.parser.add_argument('--hm_disturb', type=float, default=0) # 在heatmap中给center一个偏移，一个扰动，lambda_jt
+    self.parser.add_argument('--lost_disturb', type=float, default=0) # lambda_fn 随机的去除掉检测的结果
+    self.parser.add_argument('--fp_disturb', type=float, default=0) # false positive 在ground-truth附近加上一个有噪声的peak, lambda_fp
     self.parser.add_argument('--pre_thresh', type=float, default=-1)
-    self.parser.add_argument('--track_thresh', type=float, default=0.3)
+    self.parser.add_argument('--track_thresh', type=float, default=0.3) # 用在test里面的，只输出执行度大于0.3的轨迹
     self.parser.add_argument('--new_thresh', type=float, default=0.3)
     self.parser.add_argument('--max_frame_dist', type=int, default=3)
     self.parser.add_argument('--ltrb_amodal', action='store_true')
