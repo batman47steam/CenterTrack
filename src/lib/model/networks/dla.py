@@ -312,6 +312,8 @@ class DLA(nn.Module):
     def forward(self, x, pre_img=None, pre_hm=None):
         y = []
         x = self.base_layer(x)
+        # 上面的base_layer以及下面的pre_img_layer,pre_hm_layer的操作都是一样的
+        # conv7x7 + bn + relu
         if pre_img is not None:
             x = x + self.pre_img_layer(pre_img)
         if pre_hm is not None:

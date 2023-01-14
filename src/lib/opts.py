@@ -94,7 +94,7 @@ class opts(object):
     self.parser.add_argument('--head_conv', type=int, default=-1,
                              help='conv layer channels for output head'
                                   '0 for no conv layer'
-                                  '-1 for default setting: '
+                                  '-1 for default setting: ' # -1，默认的head_conv是256
                                   '64 for resnets and 256 for dla.')
     self.parser.add_argument('--num_head_conv', type=int, default=1)
     self.parser.add_argument('--head_kernel', type=int, default=3, help='')
@@ -299,7 +299,7 @@ class opts(object):
     print('Fix size testing.' if opt.fix_res else 'Keep resolution testing.')
 
     if opt.head_conv == -1: # init default head_conv
-      opt.head_conv = 256 if 'dla' in opt.arch else 64
+      opt.head_conv = 256 if 'dla' in opt.arch else 64 # 默认的head_conv是256
 
     opt.pad = 127 if 'hourglass' in opt.arch else 31
     opt.num_stacks = 2 if opt.arch == 'hourglass' else 1
@@ -346,9 +346,11 @@ class opts(object):
     opt.output_w = opt.input_w // opt.down_ratio
     opt.input_res = max(opt.input_h, opt.input_w)
     opt.output_res = max(opt.output_h, opt.output_w)
-  
+
+    # heads对应着每个head的输出通道数
     opt.heads = {'hm': opt.num_classes, 'reg': 2, 'wh': 2}
 
+    # 如果有tracking，要额外的加一个tracking head
     if 'tracking' in opt.task:
       opt.heads.update({'tracking': 2})
 

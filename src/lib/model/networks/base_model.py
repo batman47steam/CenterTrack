@@ -26,7 +26,7 @@ class BaseModel(nn.Module):
         else:
           head_kernel = 3
         self.num_stacks = num_stacks
-        self.heads = heads
+        self.heads = heads # heads是一个字典 opt.heads = {'hm': opt.num_classes, 'reg': 2, 'wh': 2}
         for head in self.heads:
             classes = self.heads[head]
             head_conv = head_convs[head]
