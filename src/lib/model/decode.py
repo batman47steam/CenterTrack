@@ -80,6 +80,7 @@ def _update_kps_with_hm(
   else:
     return kps, kps
 
+# 输出是hm,reg,wh,tracking
 def generic_decode(output, K=100, opt=None):
   if not ('hm' in output):
     return {}
@@ -90,20 +91,22 @@ def generic_decode(output, K=100, opt=None):
   heat = output['hm']
   batch, cat, height, width = heat.size()
 
-  heat = _nms(heat)
-  scores, inds, clses, ys0, xs0 = _topk(heat, K=K)
+  heat = _nms(heat) # _nms就是一个3x3的maxpool
+  scores, inds, clses, ys0, xs0 = _topk(heat, K=K) # 接受的参数是heat，热力图
 
+  # 可以这样说最主要的是inds就是由heatmap中得到的，
+  # 然后利用这个inds去别的输出结果中，比如wh，reg中取出相应的输出
   clses  = clses.view(batch, K)
   scores = scores.view(batch, K)
   bboxes = None
-  cts = torch.cat([xs0.unsqueeze(2), ys0.unsqueeze(2)], dim=2)
+  cts = torch.cat([xs0.unsqueeze(2), ys0.unsqueeze(2)], dim=2) # 最后一维增加一个维度
   ret = {'scores': scores, 'clses': clses.float(), 
          'xs': xs0, 'ys': ys0, 'cts': cts}
   if 'reg' in output:
     reg = output['reg']
-    reg = _tranpose_and_gather_feat(reg, inds)
+    reg = _tranpose_and_gather_feat(reg, inds) # 利用这些索引来取出具体的值
     reg = reg.view(batch, K, 2)
-    xs = xs0.view(batch, K, 1) + reg[:, :, 0:1]
+    xs = xs0.view(batch, K, 1) + reg[:, :, 0:1] # 预测出的center的坐标要额外的加上offset
     ys = ys0.view(batch, K, 1) + reg[:, :, 1:2]
   else:
     xs = xs0.view(batch, K, 1) + 0.5
@@ -113,7 +116,7 @@ def generic_decode(output, K=100, opt=None):
     wh = output['wh']
     wh = _tranpose_and_gather_feat(wh, inds) # B x K x (F)
     # wh = wh.view(batch, K, -1)
-    wh = wh.view(batch, K, 2)
+    wh = wh.view(batch, K, 2) # 获取前100个值各自对应的w和h
     wh[wh < 0] = 0
     if wh.size(2) == 2 * cat: # cat spec
       wh = wh.view(batch, K, -1, 2)
@@ -121,7 +124,7 @@ def generic_decode(output, K=100, opt=None):
       wh = wh.gather(2, cats.long()).squeeze(2) # B x K x 2
     else:
       pass
-    bboxes = torch.cat([xs - wh[..., 0:1] / 2, 
+    bboxes = torch.cat([xs - wh[..., 0:1] / 2,  # 转换得到xyxy坐标
                         ys - wh[..., 1:2] / 2,
                         xs + wh[..., 0:1] / 2, 
                         ys + wh[..., 1:2] / 2], dim=2)
@@ -138,7 +141,7 @@ def generic_decode(output, K=100, opt=None):
                         ys0.view(batch, K, 1) + ltrb[..., 3:4]], dim=2)
     ret['bboxes'] = bboxes
 
- 
+  # ret['tracking']的结果就是center对应的offset
   regression_heads = ['tracking', 'dep', 'rot', 'dim', 'amodel_offset',
     'nuscenes_att', 'velocity']
 
@@ -170,6 +173,8 @@ def generic_decode(output, K=100, opt=None):
     ret['hps'] = kps
     ret['kps_score'] = kps_score
 
+  # pre_inds就是前一帧对应的index，但是一般没有这个输入，
+  # 输入的是一个利用之前的检测结果重新画出来的heatmap （单通道）
   if 'pre_inds' in output and output['pre_inds'] is not None:
     pre_inds = output['pre_inds'] # B x pre_K
     pre_K = pre_inds.shape[1]

@@ -123,7 +123,7 @@ class Detector(object):
       
       # convert the cropped and 4x downsampled output coordinate system
       # back to the input image coordinate system
-      result = self.post_process(dets, meta, scale)
+      result = self.post_process(dets, meta, scale) # post_process之后的result是对应着真正的原始图片的
       post_process_time = time.time()
       post_time += post_process_time - decode_time
 
@@ -144,7 +144,7 @@ class Detector(object):
       # public detection mode in MOT challenge
       public_det = meta['cur_dets'] if self.opt.public_det else None
       # add tracking id to results
-      results = self.tracker.step(results, public_det)
+      results = self.tracker.step(results, public_det) # 是不是只有这里才涉及到轨迹ID，之类的
       self.pre_images = images
 
     tracking_time = time.time()
@@ -203,7 +203,7 @@ class Detector(object):
     resized_image = cv2.resize(image, (new_width, new_height))
     return resized_image, c, s, inp_width, inp_height, height, width
 
-
+  # 肯定要先知道pre_process里面做了什么，才能知道post_process里面做了什么
   def pre_process(self, image, scale, input_meta={}):
     '''
     Crop, resize, and normalize image. Gather meta data for post processing 
@@ -343,7 +343,8 @@ class Detector(object):
         output = self._flip_output(output)
       torch.cuda.synchronize()
       forward_time = time.time()
-      
+
+      # generic_decode返回的是一个解码以后的字典
       dets = generic_decode(output, K=self.opt.K, opt=self.opt)
       torch.cuda.synchronize()
       for k in dets:

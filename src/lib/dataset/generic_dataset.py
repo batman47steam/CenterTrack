@@ -19,6 +19,10 @@ from utils.image import get_affine_transform, affine_transform
 from utils.image import gaussian_radius, draw_umich_gaussian
 import copy
 
+'''
+datasets中这些类的，这些数据集都是继承了generic_dataset，
+然后他们的__get_item()部分都是直接继承了generic_dataset的
+'''
 class GenericDataset(data.Dataset):
   is_fusion_dataset = False
   default_resolution = None
@@ -459,6 +463,8 @@ class GenericDataset(data.Dataset):
     return bbox, bbox_amodal
 
   # k其实就是标记的索引，wh_mask，这些是不是只有在maxobjects数小于实际的object才有用，通常情况一张图一个object，那也就是第一个索引为1
+  # ret['masak']这个里面这么多的mask起到的是什么作用
+  # 因为对boundingbox进行了仿射变化，有些bbox可能就失效了，所以这些mask其实也就是对应着一张图片中仿射变化以后仍然有效的那些obj
   def _add_instance(
     self, ret, gt_det, k, cls_id, bbox, bbox_amodal, ann, trans_output,
     aug_s, calib, pre_cts=None, track_ids=None):

@@ -45,7 +45,7 @@ def _neg_loss(pred, gt):
       pred (batch x c x h x w)
       gt_regr (batch x c x h x w)
   '''
-  pos_inds = gt.eq(1).float()
+  pos_inds = gt.eq(1).float() # ground-truth的图中，只有值为1的才是正样本，虽然说画高斯函数时候1附近也会有一些不为0的值
   neg_inds = gt.lt(1).float()
 
   neg_weights = torch.pow(1 - gt, 4)
@@ -88,7 +88,7 @@ class FastFocalLoss(nn.Module):
     neg_loss = self.only_neg_loss(out, target)
     pos_pred_pix = _tranpose_and_gather_feat(out, ind) # B x M x C
     pos_pred = pos_pred_pix.gather(2, cat.unsqueeze(2)) # B x M
-    num_pos = mask.sum()
+    num_pos = mask.sum() # 从这里就能推断，mask应该就对应着正样本的位置
     pos_loss = torch.log(pos_pred) * torch.pow(1 - pos_pred, 2) * \
                mask.unsqueeze(2)
     pos_loss = pos_loss.sum()
@@ -119,7 +119,8 @@ class RegWeightedL1Loss(nn.Module):
     super(RegWeightedL1Loss, self).__init__()
   
   def forward(self, output, mask, ind, target):
-    pred = _tranpose_and_gather_feat(output, ind)
+    # ind的效果就是我只关注ground-truth对应位置上的l1_loss
+    pred = _tranpose_and_gather_feat(output, ind) # 利用ind取出这些位置的预测结果
     # loss = F.l1_loss(pred * mask, target * mask, reduction='elementwise_mean')
     loss = F.l1_loss(pred * mask, target * mask, reduction='sum')
     loss = loss / (mask.sum() + 1e-4)

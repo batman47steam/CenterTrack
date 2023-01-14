@@ -89,6 +89,7 @@ def load_model(model, model_path, opt, optimizer=None):
   else:
     return model
 
+# save_model的时候保存了epoch,state_dict,以及optimizer
 def save_model(path, epoch, model, optimizer=None):
   if isinstance(model, torch.nn.DataParallel):
     state_dict = model.module.state_dict()
