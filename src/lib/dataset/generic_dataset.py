@@ -79,55 +79,59 @@ class GenericDataset(data.Dataset):
     opt = self.opt
     img, anns, img_info, img_path = self._load_data(index)
 
-    height, width = img.shape[0], img.shape[1]
+    height, width = img.shape[0], img.shape[1] # height, width对应着原始图片的大小
+    # 确定图像的中心点，以及s, s是和尺度相关的，目前来看就是h和w中最大的哪一个
     c = np.array([img.shape[1] / 2., img.shape[0] / 2.], dtype=np.float32)
     s = max(img.shape[0], img.shape[1]) * 1.0 if not self.opt.not_max_crop \
       else np.array([img.shape[1], img.shape[0]], np.float32)
     aug_s, rot, flipped = 1, 0, 0
     if self.split == 'train':
-      c, aug_s, rot = self._get_aug_param(c, s, width, height)
-      s = s * aug_s
+      c, aug_s, rot = self._get_aug_param(c, s, width, height) # 获取仿射变化的参数
+      s = s * aug_s # 原始的长或宽再乘上一个比例，进行仿射变化
       if np.random.random() < opt.flip:
         flipped = 1
         img = img[:, ::-1, :]
         anns = self._flip_anns(anns, width)
 
     # 仿射变化，一般不涉及到rot，主要就是利用中心点c，尺度变化s
-    # 以及指定的input_w和input_h
+    # 在这一步通过仿射变化从图片的原始输入尺寸变化为opt.input_w指定的输入尺寸
     trans_input = get_affine_transform(
       c, s, rot, [opt.input_w, opt.input_h])
     trans_output = get_affine_transform(
       c, s, rot, [opt.output_w, opt.output_h])
     # _get_input已经是仿射变化以后的图片了，而且也变成了c,h,w的形式
+    # inp经过了仿射变化和通道数的调整
     inp = self._get_input(img, trans_input)
     ret = {'image': inp}
     gt_det = {'bboxes': [], 'scores': [], 'clses': [], 'cts': []}
 
     pre_cts, track_ids = None, None
     if opt.tracking:
-      pre_image, pre_anns, frame_dist = self._load_pre_data(
+      # 如果是利用单张的图片进行训练，video_id其实就对应着img_id, 然后每张图片的frame_id都为1
+      # 在fake_video_data里面实现的
+      pre_image, pre_anns, frame_dist = self._load_pre_data( # static image的情况下就是把当前的图片再重新的加载一次
         img_info['video_id'], img_info['frame_id'], 
         img_info['sensor_id'] if 'sensor_id' in img_info else 1)
       if flipped:
         pre_image = pre_image[:, ::-1, :].copy()
         pre_anns = self._flip_anns(pre_anns, width)
-      if opt.same_aug_pre and frame_dist != 0:
+      if opt.same_aug_pre and frame_dist != 0: # 如果frame_dist不为0，那么每次就都是相同的仿射变化
         trans_input_pre = trans_input 
         trans_output_pre = trans_output
       else:
-        c_pre, aug_s_pre, _ = self._get_aug_param(
+        c_pre, aug_s_pre, _ = self._get_aug_param( # 针对pre_img的时候会给center一个偏移，同时重新调整下scale
           c, s, width, height, disturb=True)
         s_pre = s * aug_s_pre
-        trans_input_pre = get_affine_transform(
+        trans_input_pre = get_affine_transform( # 针对pre_img的仿射变化
           c_pre, s_pre, rot, [opt.input_w, opt.input_h])
         trans_output_pre = get_affine_transform(
           c_pre, s_pre, rot, [opt.output_w, opt.output_h])
-      pre_img = self._get_input(pre_image, trans_input_pre)
+      pre_img = self._get_input(pre_image, trans_input_pre) # 利用得到的新的仿射变化去再次读取原本的图片
       pre_hm, pre_cts, track_ids = self._get_pre_dets(
         pre_anns, trans_input_pre, trans_output_pre)
-      ret['pre_img'] = pre_img
+      ret['pre_img'] = pre_img # 利用新的仿射变化重新读取的
       if opt.pre_hm:
-        ret['pre_hm'] = pre_hm
+        ret['pre_hm'] = pre_hm # pre_hm重新画的，当然画的时候也考虑了lambda_jt, lambda_fp, lambda_fn
     
     ### init samples
     self._init_ret(ret, gt_det)
@@ -136,7 +140,7 @@ class GenericDataset(data.Dataset):
     num_objs = min(len(anns), self.max_objs)
     for k in range(num_objs):
       # k对应的图片中obj的索引，第k个object
-      ann = anns[k]
+      ann = anns[k] # anns对应的是current frame的
       cls_id = int(self.cat_ids[ann['category_id']])
       if cls_id > self.opt.num_classes or cls_id <= -999:
         continue
@@ -145,12 +149,12 @@ class GenericDataset(data.Dataset):
       if cls_id <= 0 or ('iscrowd' in ann and ann['iscrowd'] > 0):
         self._mask_ignore_or_crowd(ret, cls_id, bbox)
         continue
-      self._add_instance(
+      self._add_instance( # 这个好像是用来得到ground_truth
         ret, gt_det, k, cls_id, bbox, bbox_amodal, ann, trans_output, aug_s, 
         calib, pre_cts, track_ids)
 
     if self.opt.debug > 0:
-      gt_det = self._format_gt_det(gt_det)
+      gt_det = self._format_gt_det(gt_det) # 这个gt_det只是在debug的时候用的吗
       meta = {'c': c, 's': s, 'gt_det': gt_det, 'img_id': img_info['id'],
               'img_path': img_path, 'calib': calib,
               'flipped': flipped}
@@ -181,17 +185,21 @@ class GenericDataset(data.Dataset):
 
     return img, anns, img_info, img_path
 
-
+  # 对于static image来说，这个函数充其量就是把原来的图片再重新的加载一次
+  # training的时候是选择当前frames附近的frame就可以了
+  # test的时候是要严格的满足是previous frame
   def _load_pre_data(self, video_id, frame_id, sensor_id=1):
     img_infos = self.video_to_images[video_id]
     # If training, random sample nearby frames as the "previoud" frame
     # If testing, get the exact prevous frame
     if 'train' in self.split:
+      # 为了得到img_ids这么一个元组，对于static image的训练，frame_id肯定是总为1
+      # train的时候是只要和当前frame_id 小于 max_frame_dist就可以了
       img_ids = [(img_info['id'], img_info['frame_id']) \
           for img_info in img_infos \
           if abs(img_info['frame_id'] - frame_id) < self.opt.max_frame_dist and \
           (not ('sensor_id' in img_info) or img_info['sensor_id'] == sensor_id)]
-    else:
+    else: # test的时候需要frame_dist是严格的-1，只能错开一帧
       img_ids = [(img_info['id'], img_info['frame_id']) \
           for img_info in img_infos \
             if (img_info['frame_id'] - frame_id) == -1 and \
@@ -201,18 +209,20 @@ class GenericDataset(data.Dataset):
             for img_info in img_infos \
             if (img_info['frame_id'] - frame_id) == 0 and \
             (not ('sensor_id' in img_info) or img_info['sensor_id'] == sensor_id)]
-    rand_id = np.random.choice(len(img_ids))
-    img_id, pre_frame_id = img_ids[rand_id]
-    frame_dist = abs(frame_id - pre_frame_id)
-    img, anns, _, _ = self._load_image_anns(img_id, self.coco, self.img_dir)
+    rand_id = np.random.choice(len(img_ids)) # 随机生成一个id,但是对于静止图片，len(img_ids) = 1
+    img_id, pre_frame_id = img_ids[rand_id] # pre_frame_id肯定是总是为1的
+    frame_dist = abs(frame_id - pre_frame_id) # static image, frame_dist肯定为0的
+    img, anns, _, _ = self._load_image_anns(img_id, self.coco, self.img_dir) #img_id应该就是对应coco数据集里面图片的id
     return img, anns, frame_dist
 
 
   def _get_pre_dets(self, anns, trans_input, trans_output):
     hm_h, hm_w = self.opt.input_h, self.opt.input_w
-    down_ratio = self.opt.down_ratio
-    trans = trans_input
+    down_ratio = self.opt.down_ratio # 目前只支持4
+    trans = trans_input # 仿射变化矩阵
     reutrn_hm = self.opt.pre_hm
+    # 需要注意下输入到网络里面的heatmap通道数为1，大小是和opt.input_h, opt.input_w相同的
+    # 也就是说这个是利用网络输出的结果重新画的，并不是直接获取的网络的输出
     pre_hm = np.zeros((1, hm_h, hm_w), dtype=np.float32) if reutrn_hm else None
     pre_cts, track_ids = [], []
     for ann in anns:
@@ -220,26 +230,29 @@ class GenericDataset(data.Dataset):
       if cls_id > self.opt.num_classes or cls_id <= -99 or \
          ('iscrowd' in ann and ann['iscrowd'] > 0):
         continue
-      bbox = self._coco_box_to_bbox(ann['bbox'])
-      bbox[:2] = affine_transform(bbox[:2], trans)
+      bbox = self._coco_box_to_bbox(ann['bbox']) # 从xywh的形式转换为xyxy的形式，标注的结果
+      bbox[:2] = affine_transform(bbox[:2], trans) # 坐标点同样进行仿射变化
       bbox[2:] = affine_transform(bbox[2:], trans)
-      bbox[[0, 2]] = np.clip(bbox[[0, 2]], 0, hm_w - 1)
+      bbox[[0, 2]] = np.clip(bbox[[0, 2]], 0, hm_w - 1) # 防止仿射变化以后的结果越界
       bbox[[1, 3]] = np.clip(bbox[[1, 3]], 0, hm_h - 1)
-      h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
+      h, w = bbox[3] - bbox[1], bbox[2] - bbox[0] # 仿射变化以后的h和w
       max_rad = 1
       if (h > 0 and w > 0):
-        radius = gaussian_radius((math.ceil(h), math.ceil(w)))
+        radius = gaussian_radius((math.ceil(h), math.ceil(w))) # 解方程求取的可以接受的高斯函数半径
         radius = max(0, int(radius)) 
         max_rad = max(max_rad, radius)
-        ct = np.array(
+        ct = np.array( # 计算center
           [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
         ct0 = ct.copy()
         conf = 1
 
-        ct[0] = ct[0] + np.random.randn() * self.opt.hm_disturb * w
+        # center会有一个偏移，注意下这里对应的其实都是box的center了
+        ct[0] = ct[0] + np.random.randn() * self.opt.hm_disturb * w # lambda_jt 给轨迹加上一个小的抖动
         ct[1] = ct[1] + np.random.randn() * self.opt.hm_disturb * h
-        conf = 1 if np.random.random() > self.opt.lost_disturb else 0
-        
+        conf = 1 if np.random.random() > self.opt.lost_disturb else 0 # lambda_fn有一定的几率中心点会丢掉center， conf=0
+
+        # ct_int在加上了一点高斯抖动的 lambda_jt
+        # pre_cts是用来干什么的，暂时不清楚
         ct_int = ct.astype(np.int32)
         if conf == 0:
           pre_cts.append(ct / down_ratio)
@@ -247,49 +260,54 @@ class GenericDataset(data.Dataset):
           pre_cts.append(ct0 / down_ratio)
 
         track_ids.append(ann['track_id'] if 'track_id' in ann else -1)
-        if reutrn_hm:
-          draw_umich_gaussian(pre_hm[0], ct_int, radius, k=conf)
+        if reutrn_hm: # 不管到底画不画，但是画的都是ct_int这个添加过抖动以后的center
+          draw_umich_gaussian(pre_hm[0], ct_int, radius, k=conf) # k=conf=0的就是随机丢弃的center,lambda_fn不会在heatmap上画出
 
-        if np.random.random() < self.opt.fp_disturb and reutrn_hm:
+        if np.random.random() < self.opt.fp_disturb and reutrn_hm: # lambda_fp是随机的在ground-truth附近弄一个假的峰值
           ct2 = ct0.copy()
           # Hard code heatmap disturb ratio, haven't tried other numbers.
           ct2[0] = ct2[0] + np.random.randn() * 0.05 * w
           ct2[1] = ct2[1] + np.random.randn() * 0.05 * h 
-          ct2_int = ct2.astype(np.int32)
-          draw_umich_gaussian(pre_hm[0], ct2_int, radius, k=conf)
+          ct2_int = ct2.astype(np.int32) # 这个ct2只会在heatmap上画出来，但是并不会加入到pre_cts里面
+          draw_umich_gaussian(pre_hm[0], ct2_int, radius, k=conf) # 如果是k=0的还是不会在heatmap上画出
 
-    return pre_hm, pre_cts, track_ids
+    return pre_hm, pre_cts, track_ids #加载的都是同一张图片，对应的track_ids肯定是相同的
 
   def _get_border(self, border, size):
     i = 1
-    while size - border // i <= border // i:
+    # 如果图像宽（或者高） 小于等于2xboder, 则i增大为2， 返回border // i
+    # 否则， 如果图像宽（或高） 大于2 x border, 则i不变，返回border
+    while size - border // i <= border // i: # size < 2 * border
         i *= 2
     return border // i
 
-
+  # 对于当前帧加载进来的图片得到仿射变化所必须的参数，一般disturb=False
+  # 对于pre_img，调用的时候利用的是disturb=True，之前的center和s想比inp的时候都会有所变化
   def _get_aug_param(self, c, s, width, height, disturb=False):
     if (not self.opt.not_rand_crop) and not disturb:
-      aug_s = np.random.choice(np.arange(0.6, 1.4, 0.1))
+      aug_s = np.random.choice(np.arange(0.6, 1.4, 0.1)) # 得到一个随机的尺度缩放比例
       w_border = self._get_border(128, width)
       h_border = self._get_border(128, height)
+      # _get_border为了保证low < high
+      # 在low和high之间重新的去取center
       c[0] = np.random.randint(low=w_border, high=width - w_border)
       c[1] = np.random.randint(low=h_border, high=height - h_border)
     else:
-      sf = self.opt.scale
+      sf = self.opt.scale #scale和shift默认的是0.1和0.4
       cf = self.opt.shift
       if type(s) == float:
         s = [s, s]
-      c[0] += s * np.clip(np.random.randn()*cf, -2*cf, 2*cf)
+      c[0] += s * np.clip(np.random.randn()*cf, -2*cf, 2*cf) # 给center一个偏移
       c[1] += s * np.clip(np.random.randn()*cf, -2*cf, 2*cf)
-      aug_s = np.clip(np.random.randn()*sf + 1, 1 - sf, 1 + sf)
+      aug_s = np.clip(np.random.randn()*sf + 1, 1 - sf, 1 + sf) # 缩放比例也会有一个偏移
     
-    if np.random.random() < self.opt.aug_rot:
+    if np.random.random() < self.opt.aug_rot: # 有一定的概率进行rotate层面的数据增强
       rf = self.opt.rotate
       rot = np.clip(np.random.randn()*rf, -rf*2, rf*2)
     else:
       rot = 0
     
-    return c, aug_s, rot
+    return c, aug_s, rot # 返回仿射变化的必要参数
 
 
   def _flip_anns(self, anns, width):
@@ -414,7 +432,8 @@ class GenericDataset(data.Dataset):
                     dtype=np.float32)
     return bbox
 
-
+  # 对boundingbox也进行一个输出层面上的仿射变化
+  # bbox_amodal这个里面返回的好像就是没有考虑越界的bounding box
   def _get_bbox_output(self, bbox, trans_output, height, width):
     bbox = self._coco_box_to_bbox(bbox).copy() # xywh -> x1y1x2y2
 
@@ -439,6 +458,7 @@ class GenericDataset(data.Dataset):
     h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
     return bbox, bbox_amodal
 
+  # k其实就是标记的索引，wh_mask，这些是不是只有在maxobjects数小于实际的object才有用，通常情况一张图一个object，那也就是第一个索引为1
   def _add_instance(
     self, ret, gt_det, k, cls_id, bbox, bbox_amodal, ann, trans_output,
     aug_s, calib, pre_cts=None, track_ids=None):
@@ -449,7 +469,8 @@ class GenericDataset(data.Dataset):
     # 通过解方程来确定heatmap中center的半径
     # https://cloud.tencent.com/developer/article/1669896
     radius = gaussian_radius((math.ceil(h), math.ceil(w)))
-    radius = max(0, int(radius)) 
+    radius = max(0, int(radius))
+    # ct是重新利用boundingbox算出来的
     ct = np.array(
       [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
     ct_int = ct.astype(np.int32)
@@ -459,25 +480,26 @@ class GenericDataset(data.Dataset):
       ret['wh'][k] = 1. * w, 1. * h
       ret['wh_mask'][k] = 1
     # 这里的ind只能是把图片拉平成一维以后的位置吧
-    ret['ind'][k] = ct_int[1] * self.opt.output_w + ct_int[0]
+    ret['ind'][k] = ct_int[1] * self.opt.output_w + ct_int[0] # ind记录的应该是2维图片拉平以后的索引
     ret['reg'][k] = ct - ct_int
     ret['reg_mask'][k] = 1
     # heatmap是在相应的类别所对应的通道上去画高斯圆形
     # 但是作为输入的时候就是直接在一张单通道的图上面画的
-    draw_umich_gaussian(ret['hm'][cls_id - 1], ct_int, radius)
+    # 这里是在类别对应的通道上去画出center了
+    draw_umich_gaussian(ret['hm'][cls_id - 1], ct_int, radius) #hm在debug的时候view_as_array可以直接看到
 
-    gt_det['bboxes'].append(
+    gt_det['bboxes'].append( # 转换维xyxy的形式
       np.array([ct[0] - w / 2, ct[1] - h / 2,
                 ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
     gt_det['scores'].append(1)
     gt_det['clses'].append(cls_id - 1)
-    gt_det['cts'].append(ct)
+    gt_det['cts'].append(ct) # current frame的center
 
     if 'tracking' in self.opt.heads:
       if ann['track_id'] in track_ids:
         pre_ct = pre_cts[track_ids.index(ann['track_id'])]
         ret['tracking_mask'][k] = 1
-        ret['tracking'][k] = pre_ct - ct_int
+        ret['tracking'][k] = pre_ct - ct_int # 这个就是网络要去预测的offset
         gt_det['tracking'].append(ret['tracking'][k])
       else:
         gt_det['tracking'].append(np.zeros(2, np.float32))
@@ -616,7 +638,7 @@ class GenericDataset(data.Dataset):
                 'clses': np.array([0], dtype=np.float32),
                 'cts': np.array([[0, 0]], dtype=np.float32),
                 'pre_cts': np.array([[0, 0]], dtype=np.float32),
-                'tracking': np.array([[0, 0]], dtype=np.float32),
+                'tracking': np.array([[0, 0]], dtype=np.float32), # tracking的损失应该就是offset
                 'bboxes_amodal': np.array([[0, 0]], dtype=np.float32),
                 'hps': np.zeros((1, 17, 2), dtype=np.float32),}
     gt_det = {k: np.array(gt_det[k], dtype=np.float32) for k in gt_det}
@@ -636,6 +658,6 @@ class GenericDataset(data.Dataset):
     
     if not ('annotations' in self.coco.dataset):
       return
-
+    # 对于static的image来说，是第几个annotation，他的tracking_id就对应是多少
     for i in range(len(self.coco.dataset['annotations'])):
-      self.coco.dataset['annotations'][i]['track_id'] = i + 1
+      self.coco.dataset['annotations'][i]['track_id'] = i + 1 # 对于static image，
