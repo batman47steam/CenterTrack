@@ -26,6 +26,7 @@ def create_model(arch, head, head_conv, opt=None):
   arch = arch[:arch.find('_')] if '_' in arch else arch
   model_class = _network_factory[arch]
   model = model_class(num_layers, heads=head, head_convs=head_conv, opt=opt) # head_convs就是head_conv，怎么自己加了个s
+  # print(model) 完全可以打印出模型
   return model
 
 def load_model(model, model_path, opt, optimizer=None):
