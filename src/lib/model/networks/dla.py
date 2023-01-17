@@ -340,6 +340,7 @@ class DLA(nn.Module):
 
 
 def dla34(pretrained=True, **kwargs):  # DLA-34
+    # 这里是对上面的DLA类进行了初始化，构造了DLA-34
     model = DLA([1, 1, 1, 2, 2, 1],
                 [16, 32, 64, 128, 256, 512],
                 block=BasicBlock, **kwargs)
@@ -606,10 +607,12 @@ class DLASeg(BaseModel):
             heads, head_convs, 1, 64 if num_layers == 34 else 128, opt=opt)
         down_ratio=4
         self.opt = opt
-        self.node_type = DLA_NODE[opt.dla_node]
+        self.node_type = DLA_NODE[opt.dla_node] # 确定相应的node_type也就是是否使用DCN之类的
         print('Using node type:', self.node_type)
         self.first_level = int(np.log2(down_ratio))
         self.last_level = 5
+        # globals以字典模式返回当前区域的所有全局变量， print(globals())
+        # 下面的代码就是self.base = dla34
         self.base = globals()['dla{}'.format(num_layers)](
             pretrained=(opt.load_model == ''), opt=opt)
 
