@@ -476,7 +476,7 @@ class GenericDataset(data.Dataset):
     # https://cloud.tencent.com/developer/article/1669896
     radius = gaussian_radius((math.ceil(h), math.ceil(w)))
     radius = max(0, int(radius))
-    # ct是重新利用boundingbox算出来的
+    # ct是重新利用boundingbox算出来的，这个是求ground-truth的时候
     ct = np.array(
       [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
     ct_int = ct.astype(np.int32)

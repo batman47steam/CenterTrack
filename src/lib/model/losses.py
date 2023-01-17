@@ -120,6 +120,7 @@ class RegWeightedL1Loss(nn.Module):
   
   def forward(self, output, mask, ind, target):
     # ind的效果就是我只关注ground-truth对应位置上的l1_loss
+    # 这个ind就是二维图像中对应的那个ind，在generic_dataset中计算得到的
     pred = _tranpose_and_gather_feat(output, ind) # 利用ind取出这些位置的预测结果
     # loss = F.l1_loss(pred * mask, target * mask, reduction='elementwise_mean')
     loss = F.l1_loss(pred * mask, target * mask, reduction='sum')

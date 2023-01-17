@@ -262,16 +262,16 @@ class Detector(object):
 
     output_inds = []
     for det in dets:
-      if det['score'] < self.opt.pre_thresh or det['active'] == 0:
+      if det['score'] < self.opt.pre_thresh or det['active'] == 0: # 阈值是在这里，如果det的结果小于opt.pre_thresh就不会在下一次的heatmap中画出来
         continue
       bbox = self._trans_bbox(det['bbox'], trans_input, inp_width, inp_height)
-      bbox_out = self._trans_bbox(
+      bbox_out = self._trans_bbox( # 这个是和输出尺寸对齐的仿射变化
         det['bbox'], trans_output, out_width, out_height)
       h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
       if (h > 0 and w > 0):
         radius = gaussian_radius((math.ceil(h), math.ceil(w)))
         radius = max(0, int(radius))
-        ct = np.array(
+        ct = np.array( # 毫无疑问，center还是重新利用bbox求出来的
           [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
         ct_int = ct.astype(np.int32)
         if with_hm:
