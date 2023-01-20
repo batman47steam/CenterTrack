@@ -101,7 +101,7 @@ class Detector(object):
           self.pre_images = images
           self.tracker.init_track(
             meta['pre_dets'] if 'pre_dets' in meta else [])
-        if self.opt.pre_hm:
+        if self.opt.pre_hm: # 这个是可以通过--pre_hm参数来指定的，设置--pre_hm对应的就是true
           # render input heatmap from tracker status
           # pre_inds is not used in the current version.
           # We used pre_inds for learning an offset from previous image to
@@ -281,7 +281,7 @@ class Detector(object):
            (bbox_out[1] + bbox_out[3]) / 2], dtype=np.int32)
         output_inds.append(ct_out[1] * out_width + ct_out[0])
     if with_hm:
-      input_hm = input_hm[np.newaxis]
+      input_hm = input_hm[np.newaxis] # 第一次是设置pre_hm, input_hm的结果就是zeros
       if self.opt.flip_test:
         input_hm = np.concatenate((input_hm, input_hm[:, :, :, ::-1]), axis=0)
       input_hm = torch.from_numpy(input_hm).to(self.opt.device)
